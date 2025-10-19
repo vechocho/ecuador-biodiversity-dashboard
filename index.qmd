@@ -18,53 +18,126 @@ source(here("R", "helpers.R"))
 
 ### DATASETS
 
-# Load the data from the GBIF API
-datasets <- "https://api.gbif.org/v1/dataset/search/export?format=TSV&publishing_org=104e9c96-791b-4f14-978c-f581cb214912&publishing_org=af290483-8639-4b58-87fb-a4824c65e577&publishing_org=fb10a11f-4417-41c8-be6a-13a5c8535122&publishing_org=94458240-4e38-11db-985b-b8a03c50a862&publishing_org=4c882fee-876a-4b32-b218-67b2bdd42579"
+# 1. Obtener todas las 'datasetKey' (IDs de datasets) que tienen registros en Ecuador.
+# 1. Get all 'datasetKey' (dataset IDs) that have records in Ecuador.
+# Usamos occ_search() para buscar en GBIF filtrando por país.
+# We use occ_search() to query GBIF filtering by country.
+print("Buscando dataset keys para Ecuador...") # Mensaje de depuración / Debug message
+ecuador_dataset_keys <- occ_search(
+  country = "EC",      # Código ISO de 2 letras para Ecuador / # 2-letter ISO code for Ecuador
+  limit = 0,           # No queremos los registros, solo la lista de datasets / # We don't want records, just the dataset list
+  facet = "datasetKey",# Agrupar los resultados por dataset / # Group results by dataset
+  facetLimit = 10000   # Límite máximo de datasets a recuperar / # Maximum limit of datasets to retrieve
+)$facets$datasetKey$name
+print(paste("Encontrados", length(ecuador_dataset_keys), "dataset keys para Ecuador.")) # Mensaje de depuración / Debug message
 
-data <- read_tsv(datasets)
-
-# add created and modified date to each dataset
-datasets <- data %>%
-  mutate(api_data = map(dataset_key, get_created_modified)) %>%
-  unnest(api_data) %>%
+# 2. Iterar sobre cada 'datasetKey' de Ecuador para obtener sus metadatos y fechas.
+# 2. Iterate over each Ecuador 'datasetKey' to get its metadata and dates.
+# 'map_dfr' crea una única tabla (data frame) combinando los resultados.
+# 'map_dfr' creates a single data frame by row-binding the results.
+print("Obteniendo metadatos para cada dataset key...") # Mensaje de depuración / Debug message
+datasets <- ecuador_dataset_keys %>%
+  map_dfr(~{
+    current_key <- .x 
+    # print(paste("Procesando dataset / Processing dataset:", current_key)) # Descomentar si necesitas depuración detallada
+    
+    # Intentar obtener metadatos y fechas, manejando posibles errores
+    # Try to get metadata and dates, handling potential errors
+    tryCatch({
+      # A. Obtener metadatos base (tipo, licencia)
+      # A. Get base metadata (type, license)
+      meta <- rgbif::dataset_get(current_key)
+      
+      # B. Obtener fechas de creación/modificación (usando la función de R/helpers.R)
+      # B. Get created/modified dates (using the function from R/helpers.R)
+      date_info <- get_created_modified(current_key) 
+      
+      # C. Construir una fila (tibble) con toda la información necesaria.
+      # C. Build a single row (tibble) with all necessary information.
+      tibble(
+        dataset_key = meta$data$key,
+        type = meta$data$type,
+        license = meta$data$license,
+        occurrence_records_count = meta$data$occurrenceCount %||% 0,
+        created = date_info$created,
+        modified = date_info$modified
+      )
+    }, error = function(e) {
+      # Si hay un error obteniendo datos para una key, imprimirlo y devolver NULL para ignorarla
+      # If there's an error getting data for a key, print it and return NULL to skip it
+      print(paste("Error procesando dataset key", current_key, ":", e$message))
+      NULL 
+    })
+  }) %>%
+  # Asegurarse de que las columnas de fecha existan antes de procesarlas
+  # Make sure date columns exist before processing them
+  filter(!is.null(created) & !is.null(modified)) %>% 
   mutate(
     created_date = as_date(created),
     created_year = year(created_date),
     modified_date = as_date(modified),
     modified_year = year(modified_date)
   )
+print("Metadatos obtenidos y fechas procesadas.") # Mensaje de depuración / Debug message
+print(paste("Dimensiones finales de la tabla 'datasets':", paste(dim(datasets), collapse = " x "))) # Mensaje de depuración / Debug message
 
-# Prepare counts per created_year and type
+# --- PROCESAMIENTO DE DATOS (Basado en la tabla 'datasets' filtrada para Ecuador) ---
+# --- DATA PROCESSING (Based on the 'datasets' table filtered for Ecuador) ---
+
+# Contar datasets por año de creación y tipo
+# Count datasets by creation year and type
 created_datasets_counts <- datasets %>%
   group_by(created_year, type) %>%
   summarise(count = n(), .groups = "drop")
 
-# Calculate cumulative dataset counts per created_year
+# Calcular el total acumulativo de datasets por año
+# Calculate the cumulative total of datasets per year
 cumulative_created_datasets <- created_datasets_counts %>%
   group_by(created_year) %>%
   summarise(yearly_total = sum(count)) %>%
   arrange(created_year) %>%
   mutate(cumulative_total = cumsum(yearly_total))
 
-# Prepare counts per modified_year and type
+# Contar datasets por año de modificación y tipo
+# Count datasets by modification year and type
 modified_datasets_counts <- datasets %>%
   group_by(modified_year, type) %>%
   summarise(count = n(), .groups = "drop")
 
-# Summarise occurrence records per created_year
+# Sumar el número de registros (occurrences) por año de creación del dataset
+# Sum the number of records (occurrences) by the dataset's creation year
 records_per_year <- datasets %>%
   group_by(created_year) %>%
   summarise(total_occurrence_records = sum(occurrence_records_count, na.rm = TRUE)) %>%
   arrange(created_year) %>%
   mutate(cumulative_occ = cumsum(total_occurrence_records))
 
-# Count datasets by license
+# Contar el número de datasets por tipo de licencia
+# Count the number of datasets by license type
 license_counts <- datasets %>%
   count(license, name = "count")
 
+print("Tablas de resumen calculadas.") # Mensaje de depuración / Debug message
+
 ### CITATIONS 
 
-citation_url <- "https://api.gbif.org/v1/literature/search?publishingOrganizationKey=104e9c96-791b-4f14-978c-f581cb214912&publishingOrganizationKey=af290483-8639-4b58-87fb-a4824c65e577&publishingOrganizationKey=fb10a11f-4417-41c8-be6a-13a5c8535122&publishingOrganizationKey=94458240-4e38-11db-985b-b8a03c50a862&publishingOrganizationKey=4c882fee-876a-4b32-b218-67b2bdd42579&facet=year"
+# Construir la URL de búsqueda de literatura dinámicamente
+# Build the literature search URL dynamically
+# Buscamos artículos que citen CUALQUIERA de los datasets encontrados para Ecuador
+# We search for articles citing ANY of the datasets found for Ecuador
+base_citation_url <- "[https://api.gbif.org/v1/literature/search?gbifDatasetKey=](https://api.gbif.org/v1/literature/search?gbifDatasetKey=)"
+# Unimos todas las keys encontradas (si existen) con "&gbifDatasetKey="
+# Join all found keys (if they exist) with "&gbifDatasetKey="
+if (nrow(datasets) > 0 && "dataset_key" %in% names(datasets)) {
+  dataset_keys_param <- paste(datasets$dataset_key, collapse = "&gbifDatasetKey=") 
+} else {
+  dataset_keys_param <- "" # Si no hay datasets, la búsqueda no tendrá filtro de key
+}
+# Añadimos el facet por año al final
+# Add the year facet at the end
+citation_url <- paste0(base_citation_url, dataset_keys_param, "&facet=year")
+
+print(paste("URL de Citaciones:", citation_url)) # Mensaje de depuración / Debug message
 
 # Fetch and parse
 response <- GET(citation_url)
