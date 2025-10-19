@@ -42,7 +42,7 @@ jobs:
           install.packages("rgbif")
         shell: Rscript {0}
 
-      # 5. Instalar Quarto
+      # 5. Instalar Quarto 
       - name: Set up Quarto
         uses: quarto-dev/quarto-actions/setup@v2
 
