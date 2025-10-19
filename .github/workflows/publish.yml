@@ -1,0 +1,64 @@
+# Nombre del workflow
+name: Publish Quarto Website
+
+# Define cuándo se debe ejecutar
+on:
+  push:
+    branches: [main] # Al hacer push a la rama main
+  workflow_dispatch: # Permite ejecución manual
+
+# Permisos CRÍTICOS para desplegar en GitHub Pages
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+# Trabajos a ejecutar
+jobs:
+  publish:
+    runs-on: ubuntu-latest # Usar Ubuntu
+    steps:
+      # 1. Descargar el código
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      # 2. Instalar R
+      - name: Set up R
+        uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: 'latest'
+
+      # 3. Instalar dependencias del sistema Ubuntu
+      - name: Install Ubuntu system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libcurl4-openssl-dev libfontconfig1-dev libfreetype6-dev libx11-dev pandoc libharfbuzz-dev libfribidi-dev libpng-dev libtiff5-dev libjpeg-dev
+
+      # 4. Instalar paquetes de R (renv + rgbif)
+      - name: Restore R packages
+        run: |
+          install.packages("renv")
+          renv::restore(prompt = FALSE)
+          install.packages("rgbif")
+        shell: Rscript {0}
+
+      # 5. Instalar Quarto
+      - name: Set up Quarto
+        uses: quarto-dev/quarto-actions/setup@v2
+
+      # 6. Renderizar el dashboard
+      - name: Render Quarto Website
+        uses: quarto-dev/quarto-actions/render@v2
+        with:
+          to: html # Asegura que renderice a HTML
+
+      # 7. Subir el sitio compilado (_site) como artefacto
+      - name: Upload Artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site # Carpeta que contiene el index.html
+
+      # 8. Desplegar el artefacto a GitHub Pages
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
