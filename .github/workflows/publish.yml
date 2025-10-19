@@ -50,7 +50,8 @@ jobs:
       - name: Render Quarto Website
         uses: quarto-dev/quarto-actions/render@v2
         with:
-          to: html # Asegura que renderice a HTML
+          to: html # Asegura que renderice a 
+          path: index.qmd
 
       # 7. Subir el sitio compilado (_site) como artefacto
       - name: Upload Artifact
