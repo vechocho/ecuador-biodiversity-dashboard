@@ -52,18 +52,11 @@ jobs:
         with:
           to: html # Asegura que renderice a 
           path: index.qmd
-          output-dir: _site
-
-      # NUEVO PASO DE VERIFICACIÓN
-      - name: Check if _site directory exists
-        run: ls -la _site
-
+          
       # 7. Subir el sitio compilado (_site) como artefacto
       - name: Upload Artifact
         uses: actions/upload-pages-artifact@v3
-        with:
-          path: _site # Carpeta que contiene el index.html
-
+        
       # 8. Desplegar el artefacto a GitHub Pages
       - name: Deploy to GitHub Pages
         id: deployment
