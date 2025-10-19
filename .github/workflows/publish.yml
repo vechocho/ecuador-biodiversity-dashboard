@@ -52,6 +52,7 @@ jobs:
         with:
           to: html # Asegura que renderice a 
           path: index.qmd
+          output-dir: _site
 
       # 7. Subir el sitio compilado (_site) como artefacto
       - name: Upload Artifact
