@@ -54,6 +54,10 @@ jobs:
           path: index.qmd
           output-dir: _site
 
+      # NUEVO PASO DE VERIFICACIÓN
+      - name: Check if _site directory exists
+        run: ls -la _site
+
       # 7. Subir el sitio compilado (_site) como artefacto
       - name: Upload Artifact
         uses: actions/upload-pages-artifact@v3
