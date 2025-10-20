@@ -24,11 +24,11 @@ print("Buscando conteos de ocurrencias por AÑO DE EVENTO para Ecuador...")
 occurrence_counts_by_event_year <- occ_search(
   country = "EC",
   facet = "year",
-  facetLimit = 200,
+  facetLimit = 200, # Aumentado por si acaso
   limit = 0
 )$facets$year$counts %>%
   as_tibble() %>%
-  rename(year = name, count_event = count) %>% # Renombrar para claridad
+  rename(year = name, count_event = count) %>%
   mutate(
     year = as.integer(year),
     count_event = as.integer(count_event)
@@ -39,46 +39,59 @@ occurrence_counts_by_event_year <- occ_search(
 
 print("Conteos por año de evento obtenidos.")
 
-# --- OCURRENCIAS PUBLICADAS POR AÑO (CSV) ---
-print("Descargando y procesando CSV de ocurrencias publicadas por año...")
+# --- OCURRENCIAS PUBLICADAS POR AÑO (Procesando Snapshots del CSV) ---
+print("Descargando y procesando CSV de snapshots...")
 published_by_year_url <- "[https://analytics-files.gbif.org/country/EC/publishedBy/csv/occ.csv](https://analytics-files.gbif.org/country/EC/publishedBy/csv/occ.csv)"
 tryCatch({
-  occ_published_by_year <- read_csv(published_by_year_url) %>%
-    # Asegúrate que las columnas se llamen 'year' y 'occ_count' en el CSV
-    select(year, occ_count) %>%
-    rename(count_published = occ_count) %>% # Renombrar para claridad
-    filter(!is.na(year), year >= 1950, year <= year(today())) %>%
-    mutate(year = as.integer(year),
-           count_published = as.integer(count_published)) %>%
-    arrange(year) %>%
-    mutate(cumulative_published = cumsum(count_published))
 
-  print("CSV de ocurrencias publicadas procesado.")
+  # Lee el CSV
+  raw_snapshots <- read_csv(published_by_year_url)
+
+  # ---- NOMBRES DE COLUMNA CORREGIDOS ----
+  snapshot_date_col <- "snapshot"         # <-- Nombre correcto
+  snapshot_count_col <- "occurrenceCount" # <-- Nombre correcto
+  # --------------------------------------
+
+  # Procesa los snapshots para obtener cuentas anuales
+  occ_published_snapshots <- raw_snapshots %>%
+    select(snapshot_date = all_of(snapshot_date_col), total_count = all_of(snapshot_count_col)) %>%
+    mutate(snapshot_date = ymd(snapshot_date)) %>% # Asume formato AAAA-MM-DD
+    arrange(snapshot_date) %>% # Ordena por fecha
+    mutate(published_since_last = total_count - lag(total_count, default = 0)) %>%
+    mutate(publishing_year = year(snapshot_date)) %>%
+    filter(publishing_year >= 1950, publishing_year <= year(today())) # Filtrar años
+
+  # Agrupa por año para obtener el total publicado ESE año
+  occ_published_by_year <- occ_published_snapshots %>%
+    group_by(publishing_year) %>%
+    summarise(count_published = sum(published_since_last, na.rm = TRUE), .groups = 'drop') %>%
+    arrange(publishing_year) %>%
+    mutate(cumulative_published = cumsum(count_published)) # Calcula el acumulado final
+
+  print("CSV de snapshots procesado para obtener cuentas anuales.")
+  print(paste("Dim 'occ_published_by_year':", paste(dim(occ_published_by_year), collapse = " x ")))
 
 }, error = function(e) {
-  print(paste("Error descargando o procesando el CSV:", e$message))
-  occ_published_by_year <- tibble(year = integer(), count_published = integer(), cumulative_published = integer())
+  print(paste("Error descargando o procesando el CSV de snapshots:", e$message))
+  occ_published_by_year <- tibble(publishing_year = integer(), count_published = integer(), cumulative_published = integer())
 })
 
 # --- UNIR AMBAS SERIES DE DATOS ---
-# Usamos full_join para mantener todos los años de ambas tablas
+# Renombramos 'publishing_year' a 'year' para unir
+occ_published_by_year <- occ_published_by_year %>% rename(year = publishing_year)
+
 combined_trends <- full_join(
     occurrence_counts_by_event_year,
     occ_published_by_year,
     by = "year"
   ) %>%
-  # Rellenar NAs con 0 donde una serie no tenga datos para un año
-  mutate(
-    count_event = replace_na(count_event, 0),
-    cumulative_event = replace_na(cumulative_event, 0),
-    count_published = replace_na(count_published, 0),
-    cumulative_published = replace_na(cumulative_published, 0)
-  ) %>%
-  # Re-calcular acumulados después de rellenar NAs (más seguro)
+  # Rellenar NAs con 0 y recalcular acumulados de forma segura
   arrange(year) %>%
   mutate(
-      cumulative_event = cumsum(count_event),
-      cumulative_published = cumsum(count_published)
+    count_event = replace_na(count_event, 0),
+    count_published = replace_na(count_published, 0),
+    cumulative_event = cumsum(count_event),
+    cumulative_published = cumsum(count_published)
   )
 
 print("Tendencias combinadas.")
