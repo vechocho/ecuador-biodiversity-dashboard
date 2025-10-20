@@ -1,8 +1,9 @@
 ---
 title: "Ocurrencias por Año de Colecta/Observación"
-format: html # Formato simple de página
+format: 
+  html: default # Indentado bajo 'format:'
 execute:
-  echo: false # Ocultar código R
+  echo: false
 ---
 
 ```{r setup-event, include=FALSE}

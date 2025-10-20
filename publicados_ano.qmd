@@ -1,6 +1,7 @@
 ---
-  title: "Ocurrencias Publicadas en GBIF por Año"
-format: html
+title: "Ocurrencias Publicadas en GBIF por Año" # Sin espacios al inicio
+format: 
+  html: default # Indentado bajo 'format:'
 execute:
   echo: false
 ---
