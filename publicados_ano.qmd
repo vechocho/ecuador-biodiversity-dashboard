@@ -1,11 +1,11 @@
 ---
-title: "Ocurrencias Publicadas en GBIF por Año"
+  title: "Ocurrencias Publicadas en GBIF por Año"
 format: html
 execute:
   echo: false
 ---
-
-```{r setup-published, include=FALSE}
+  
+  ```{r setup-published, include=FALSE}
 # Cargar librerías necesarias
 library(tidyverse)
 library(plotly)
@@ -15,20 +15,22 @@ library(readr)
 
 # --- OCURRENCIAS PUBLICADAS POR AÑO (Procesando Snapshots del CSV) ---
 print("Descargando y procesando CSV de snapshots...")
-published_by_year_url <- "[https://analytics-files.gbif.org/country/EC/publishedBy/csv/occ.csv](https://analytics-files.gbif.org/country/EC/publishedBy/csv/occ.csv)"
+published_by_year_url <- "https://analytics-files.gbif.org/country/EC/publishedBy/csv/occ.csv"
+
+# --- SALTO DE LÍNEA CORREGIDO AQUÍ ---
 occ_published_by_year <- tibble() # Inicializar tabla vacía
 
 tryCatch({
   # Lee el CSV directamente desde la URL
   raw_snapshots <- read_csv(published_by_year_url, show_col_types = FALSE) # Ocultar mensajes de tipo de columna
-
+  
   # Nombres de columna confirmados
   snapshot_date_col <- "snapshot"
   snapshot_count_col <- "occurrenceCount"
-
+  
   # Verificar que las columnas existan antes de procesar
   if (snapshot_date_col %in% colnames(raw_snapshots) && snapshot_count_col %in% colnames(raw_snapshots)) {
-
+    
     # Procesa los snapshots para obtener cuentas anuales
     occ_published_snapshots <- raw_snapshots %>%
       select(snapshot_date = all_of(snapshot_date_col), total_count = all_of(snapshot_count_col)) %>%
@@ -45,21 +47,21 @@ tryCatch({
       mutate(published_since_last = ifelse(published_since_last < 0, 0, published_since_last)) %>%
       mutate(publishing_year = year(snapshot_date)) %>%
       filter(publishing_year >= 1950, publishing_year <= year(today())) # Filtrar años
-
+    
     # Agrupa por año para obtener el total publicado ESE año
     occ_published_by_year <- occ_published_snapshots %>%
       group_by(publishing_year) %>%
       summarise(count_published = sum(published_since_last, na.rm = TRUE), .groups = 'drop') %>%
       arrange(publishing_year) %>%
       mutate(cumulative_published = cumsum(count_published)) # Calcula el acumulado final
-
+    
     print("CSV de snapshots procesado para obtener cuentas anuales.")
     print(paste("Dim 'occ_published_by_year':", paste(dim(occ_published_by_year), collapse = " x ")))
-
+    
   } else {
-      print(paste("Error: Las columnas requeridas ('", snapshot_date_col, "', '", snapshot_count_col, "') no se encontraron en el CSV."))
+    print(paste("Error: Las columnas requeridas ('", snapshot_date_col, "', '", snapshot_count_col, "') no se encontraron en el CSV."))
   }
-
+  
 }, error = function(e) {
   print(paste("Error descargando o procesando el CSV de snapshots:", e$message))
   # Dejar occ_published_by_year como tabla vacía si hay error
@@ -93,7 +95,7 @@ fig_published <- plot_ly() %>%
   layout(
     xaxis = list(title = "Año de Publicación en GBIF"),
     yaxis = list(title = "Registros Publicados por Año (log)", type = "log", rangemode = "nonnegative"),
-    yaxis2 = list(overlaying = "y", side = "right", type = "log", title = list(text = "Total Acumulativo Publicado (log)"), rangemode = "nonnegative"),
+    yaxis2 = list(overlaying = "y", side = "right", type = "log", title = list(text = "Total Acumulado Publicado (log)"), rangemode = "nonnegative"),
     margin = list(r = 80),
     legend = list(x = 0.05, y = 0.95)
   )

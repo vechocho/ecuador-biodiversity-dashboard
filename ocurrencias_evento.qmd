@@ -14,21 +14,59 @@ library(lubridate)
 
 # --- OCURRENCIAS POR AÑO DE EVENTO (API GBIF) ---
 print("Buscando conteos de ocurrencias por AÑO DE EVENTO para Ecuador...")
-occurrence_counts_by_event_year <- occ_search(
-  country = "EC", facet = "year", facetLimit = 200, limit = 0
-)$facets$year$counts %>%
-  as_tibble() %>%
-  rename(year = name, count = count) %>%
-  mutate(year = as.integer(year), count = as.integer(count)) %>%
-  filter(year >= 1800, year <= year(today())) %>%
-  arrange(year) %>%
-  mutate(cumulative_occ_event = cumsum(count))
 
-print("Conteos por año de evento obtenidos.")
+# 1. Obtener resultado completo
+gbif_result <- tryCatch({
+  occ_search(
+    country = "EC", facet = "year", facetLimit = 200, limit = 0
+  )
+}, error = function(e){
+  print(paste("Error en occ_search:", e$message))
+  NULL
+})
 
-# Renombrar para el gráfico
-records_per_year_event <- occurrence_counts_by_event_year %>%
-  rename(created_year = year, total_occurrence_records = count)
+# 2. Extraer DIRECTAMENTE la tabla de facetas '$facets$year'
+occurrence_raw_counts <- NULL 
+if (!is.null(gbif_result) && !is.null(gbif_result$facets) && !is.null(gbif_result$facets$year)) {
+  occurrence_raw_counts <- gbif_result$facets$year %>% as_tibble() 
+  print("Tabla de facetas '$facets$year' extraída correctamente.")
+  # print(colnames(occurrence_raw_counts)) # Descomentar si necesitas verificar nombres de nuevo
+} else {
+  print("No se encontró la tabla de facetas '$facets$year' en la respuesta de GBIF.")
+}
+
+# 3. Procesar si la tabla se extrajo correctamente
+records_per_year_event <- tibble() # Inicializar tabla vacía
+if (!is.null(occurrence_raw_counts) && nrow(occurrence_raw_counts) > 0) {
+  # Verificar que las columnas 'name' y 'count' existan
+  if ("name" %in% colnames(occurrence_raw_counts) && "count" %in% colnames(occurrence_raw_counts)) {
+    
+    occurrence_counts_by_event_year <- occurrence_raw_counts %>%
+      rename(
+        year = name,  # Renombrar 'name' a 'year'
+        count = count # Mantener 'count'
+      ) %>% 
+      rename(count_event = count) %>% # Renombrar 'count' a 'count_event'
+      mutate(
+        year = as.integer(year), 
+        count_event = as.integer(count_event)
+      ) %>%
+      filter(year >= 1800, year <= year(today())) %>% 
+      arrange(year) %>%
+      mutate(cumulative_occ_event = cumsum(count_event)) # Calcular acumulado
+    
+    print("Conteos por año de evento obtenidos.")
+    
+    # Renombrar columnas para usar en el gráfico existente
+    records_per_year_event <- occurrence_counts_by_event_year %>%
+      rename(created_year = year, total_occurrence_records = count_event)
+    
+  } else {
+    print("ERROR: Las columnas 'name' y/o 'count' no se encontraron en la tabla de facetas extraída.")
+  }
+} else {
+  print("No se pudieron extraer datos de conteo válidos.")
+}
 
 #| title: Número de Registros por Año de Colecta/Observación
 # Muestra cuántos registros se colectaron/observaron en cada año.
@@ -55,5 +93,5 @@ fig_event <- plot_ly() %>%
 if(nrow(records_per_year_event) > 0) {
   fig_event
 } else {
-  print("No hay datos de ocurrencias por año de evento.")
+  print("No hay datos de ocurrencias por año de evento para graficar.")
 }
