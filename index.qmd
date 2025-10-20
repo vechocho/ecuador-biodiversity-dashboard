@@ -1,13 +1,18 @@
 ---
-title: "SCAR Antarctic Biodiversity Portal Activity Dashboard"
-format: 
+# Título del dashboard (actualizado a Ecuador)
+title: "Actividad de Publicación de Biodiversidad de Ecuador"
+format:
   dashboard:
-    scrolling: true 
-execute: 
-  echo: false
+    scrolling: true # Permite hacer scroll si el contenido es largo
+execute:
+  echo: false # Oculta el código R en la página web final
 ---
 
 ```{r setup, include = FALSE}
+# --- BLOQUE DE CONFIGURACIÓN ---
+
+# Carga de todas las librerías de R necesarias.
+# 'include = FALSE' significa que este bloque no se mostrará en la web.
 library(tidyverse)
 library(plotly)
 library(here)
@@ -15,84 +20,75 @@ library(viridis)
 library(httr)
 library(jsonlite)
 library(rgbif)
+library(lubridate)
+
+# Carga la función de ayuda 'get_created_modified' desde el archivo R/helpers.R
 source(here("R", "helpers.R"))
 
-### DATASETS
+# --- CARGA DE DATOS DE DATASETS ---
 
 # 1. Obtener todas las 'datasetKey' (IDs de datasets) que tienen registros en Ecuador.
-# 1. Get all 'datasetKey' (dataset IDs) that have records in Ecuador.
 # Usamos occ_search() para buscar en GBIF filtrando por país.
-# We use occ_search() to query GBIF filtering by country.
-print("Buscando dataset keys para Ecuador...") # Mensaje de depuración / Debug message
+print("Buscando dataset keys para Ecuador...") # Mensaje de depuración
 ecuador_dataset_keys <- occ_search(
-  country = "EC",      # Código ISO de 2 letras para Ecuador / # 2-letter ISO code for Ecuador
-  limit = 0,           # No queremos los registros, solo la lista de datasets / # We don't want records, just the dataset list
-  facet = "datasetKey",# Agrupar los resultados por dataset / # Group results by dataset
-  facetLimit = 10000   # Límite máximo de datasets a recuperar / # Maximum limit of datasets to retrieve
+  country = "EC",      # Código ISO de 2 letras para Ecuador
+  limit = 0,           # No queremos los registros, solo la lista de datasets
+  facet = "datasetKey",# Agrupar los resultados por dataset
+  facetLimit = 10000   # Límite máximo de datasets a recuperar
 )$facets$datasetKey$name
-print(paste("Encontrados", length(ecuador_dataset_keys), "dataset keys para Ecuador.")) # Mensaje de depuración / Debug message
+print(paste("Encontrados", length(ecuador_dataset_keys), "dataset keys para Ecuador.")) # Mensaje de depuración
 
 # 2. Iterar sobre cada 'datasetKey' de Ecuador para obtener sus metadatos y fechas.
-# 2. Iterate over each Ecuador 'datasetKey' to get its metadata and dates.
 # 'map_dfr' crea una única tabla (data frame) combinando los resultados.
-# 'map_dfr' creates a single data frame by row-binding the results.
-print("Obteniendo metadatos para cada dataset key...") # Mensaje de depuración / Debug message
+print("Obteniendo metadatos para cada dataset key...") # Mensaje de depuración
 datasets <- ecuador_dataset_keys %>%
   map_dfr(~{
-    current_key <- .x 
-    # print(paste("Procesando dataset / Processing dataset:", current_key)) # Descomentar si necesitas depuración detallada
-    
+    current_key <- .x
+    # print(paste("Procesando dataset:", current_key)) # Descomentar si necesitas depuración detallada
+
     # Intentar obtener metadatos y fechas, manejando posibles errores
-    # Try to get metadata and dates, handling potential errors
     tryCatch({
       # A. Obtener metadatos base (tipo, licencia)
-      # A. Get base metadata (type, license)
       meta <- rgbif::dataset_get(current_key)
-      
+
       # B. Obtener fechas de creación/modificación (usando la función de R/helpers.R)
-      # B. Get created/modified dates (using the function from R/helpers.R)
-      date_info <- get_created_modified(current_key) 
-      
+      date_info <- get_created_modified(current_key)
+
       # C. Construir una fila (tibble) con toda la información necesaria.
-      # C. Build a single row (tibble) with all necessary information.
+      # ¡CORRECCIÓN AQUÍ! Usar %||% "UNKNOWN" para type y license.
       tibble(
         dataset_key = meta$data$key,
-        type = meta$data$type,
-        license = meta$data$license,
+        type = meta$data$type %||% "UNKNOWN",     # <-- CORREGIDO
+        license = meta$data$license %||% "UNKNOWN", # <-- CORREGIDO (por seguridad)
         occurrence_records_count = meta$data$occurrenceCount %||% 0,
         created = date_info$created,
         modified = date_info$modified
       )
     }, error = function(e) {
       # Si hay un error obteniendo datos para una key, imprimirlo y devolver NULL para ignorarla
-      # If there's an error getting data for a key, print it and return NULL to skip it
       print(paste("Error procesando dataset key", current_key, ":", e$message))
-      NULL 
+      NULL
     })
   }) %>%
   # Asegurarse de que las columnas de fecha existan antes de procesarlas
-  # Make sure date columns exist before processing them
-  filter(!is.null(created) & !is.null(modified)) %>% 
+  filter(!is.null(created) & !is.null(modified)) %>%
   mutate(
     created_date = as_date(created),
     created_year = year(created_date),
     modified_date = as_date(modified),
     modified_year = year(modified_date)
   )
-print("Metadatos obtenidos y fechas procesadas.") # Mensaje de depuración / Debug message
-print(paste("Dimensiones finales de la tabla 'datasets':", paste(dim(datasets), collapse = " x "))) # Mensaje de depuración / Debug message
+print("Metadatos obtenidos y fechas procesadas.") # Mensaje de depuración
+print(paste("Dimensiones finales de la tabla 'datasets':", paste(dim(datasets), collapse = " x "))) # Mensaje de depuración
 
 # --- PROCESAMIENTO DE DATOS (Basado en la tabla 'datasets' filtrada para Ecuador) ---
-# --- DATA PROCESSING (Based on the 'datasets' table filtered for Ecuador) ---
 
 # Contar datasets por año de creación y tipo
-# Count datasets by creation year and type
 created_datasets_counts <- datasets %>%
   group_by(created_year, type) %>%
   summarise(count = n(), .groups = "drop")
 
 # Calcular el total acumulativo de datasets por año
-# Calculate the cumulative total of datasets per year
 cumulative_created_datasets <- created_datasets_counts %>%
   group_by(created_year) %>%
   summarise(yearly_total = sum(count)) %>%
@@ -100,13 +96,11 @@ cumulative_created_datasets <- created_datasets_counts %>%
   mutate(cumulative_total = cumsum(yearly_total))
 
 # Contar datasets por año de modificación y tipo
-# Count datasets by modification year and type
 modified_datasets_counts <- datasets %>%
   group_by(modified_year, type) %>%
   summarise(count = n(), .groups = "drop")
 
 # Sumar el número de registros (occurrences) por año de creación del dataset
-# Sum the number of records (occurrences) by the dataset's creation year
 records_per_year <- datasets %>%
   group_by(created_year) %>%
   summarise(total_occurrence_records = sum(occurrence_records_count, na.rm = TRUE)) %>%
@@ -114,95 +108,91 @@ records_per_year <- datasets %>%
   mutate(cumulative_occ = cumsum(total_occurrence_records))
 
 # Contar el número de datasets por tipo de licencia
-# Count the number of datasets by license type
 license_counts <- datasets %>%
   count(license, name = "count")
 
-print("Tablas de resumen calculadas.") # Mensaje de depuración / Debug message
+print("Tablas de resumen calculadas.") # Mensaje de depuración
 
-### CITATIONS 
+# --- CARGA DE DATOS DE CITACIONES ---
 
 # Construir la URL de búsqueda de literatura dinámicamente
-# Build the literature search URL dynamically
 # Buscamos artículos que citen CUALQUIERA de los datasets encontrados para Ecuador
-# We search for articles citing ANY of the datasets found for Ecuador
-base_citation_url <- "[https://api.gbif.org/v1/literature/search?gbifDatasetKey=](https://api.gbif.org/v1/literature/search?gbifDatasetKey=)"
+base_citation_url <- "[https://api.gbif.org/v1/literature/search?gbifDatasetKey=](https://api.gbif.org/v1/literature/search?gbifDatasetKey=)" # <-- CORREGIDO
 # Unimos todas las keys encontradas (si existen) con "&gbifDatasetKey="
-# Join all found keys (if they exist) with "&gbifDatasetKey="
 if (nrow(datasets) > 0 && "dataset_key" %in% names(datasets)) {
-  dataset_keys_param <- paste(datasets$dataset_key, collapse = "&gbifDatasetKey=") 
+  dataset_keys_param <- paste(datasets$dataset_key, collapse = "&gbifDatasetKey=")
 } else {
   dataset_keys_param <- "" # Si no hay datasets, la búsqueda no tendrá filtro de key
 }
 # Añadimos el facet por año al final
-# Add the year facet at the end
 citation_url <- paste0(base_citation_url, dataset_keys_param, "&facet=year")
 
-print(paste("URL de Citaciones:", citation_url)) # Mensaje de depuración / Debug message
+print(paste("URL de Citaciones:", citation_url)) # Mensaje de depuración
 
-# Fetch and parse
+# Hacer la llamada a la API
 response <- GET(citation_url)
-stop_for_status(response)
+stop_for_status(response) # Detener si la API da un error
+
+# Procesar la respuesta JSON
 citation_json_data <- content(response, "text", encoding = "UTF-8") %>% fromJSON(flatten = TRUE)
 
-# Extract year + count from facets
-citation_per_year <- citation_json_data$facets$counts[[1]] %>%
-  as_tibble() %>%
-  rename(year = name) %>%
-  mutate(
-    year = as.integer(year),
-    count = as.integer(count)
-  ) %>%
-  arrange(year) %>%  # ensure ascending order for correct cumulative sum
-  mutate(cumulative_count = cumsum(count)) 
+# Extraer los conteos de citaciones por año
+# Manejar el caso donde no hay citaciones (facets puede ser NULL o no tener 'counts')
+if (!is.null(citation_json_data$facets) && !is.null(citation_json_data$facets$counts) && length(citation_json_data$facets$counts) > 0) {
+  citation_per_year <- citation_json_data$facets$counts[[1]] %>%
+    as_tibble() %>%
+    rename(year = name) %>%
+    mutate(
+      year = as.integer(year),
+      count = as.integer(count)
+    ) %>%
+    arrange(year) %>%  # Asegurar orden ascendente
+    mutate(cumulative_count = cumsum(count)) # Suma acumulativa
+} else {
+  # Si no hay citaciones, crear una tabla vacía con la estructura correcta
+  citation_per_year <- tibble(year = integer(), count = integer(), cumulative_count = integer())
+  print("No se encontraron citaciones para los datasets de Ecuador.") # Mensaje de depuración
+}
+#| title: Número de Registros de Ocurrencia Publicados por Año
+# Este gráfico muestra cuántos registros (total_occurrence_records)
+# se publicaron cada año, basado en el año de creación del dataset.
 
-
-```
-
-## Row
-
-### Occurrences published
-
-```{r}
-#| title: Number of Occurrence Records Published per Year
-
-# Use bright orange for the cumulative curve
-cumulative_color <- "#F8760D"
+cumulative_color <- "#F8760D" # Color para la línea acumulativa
 
 fig <- plot_ly() %>%
-  
-  # Bar chart: Total Occurrence Records Published per Year
+
+  # Gráfico de barras: Registros por año
   add_bars(
     data = records_per_year,
     x = ~created_year,
     y = ~total_occurrence_records,
-    name = "Records published per year",
+    name = "Registros por año",
     marker = list(color = "#21908CFF")
   ) %>%
-  
-  # Overlay cumulative curve
+
+  # Línea: Total acumulativo
   add_lines(
     data = records_per_year,
     x = ~created_year,
     y = ~cumulative_occ,
-    name = "Cumulative Total",
-    yaxis = "y2",
+    name = "Total Acumulativo",
+    yaxis = "y2", # Usar el eje Y secundario (derecha)
     line = list(color = cumulative_color, width = 2)
   ) %>%
-  
-  # Layout for log scale
+
+  # Configuración de los ejes
   layout(
-    xaxis = list(title = "Year"),
+    xaxis = list(title = "Año"),
     yaxis = list(
-      title = "Records Published per Year (log)",
-      type = "log",
+      title = "Registros por Año (log)",
+      type = "log", # Escala logarítmica
       rangemode = "nonnegative"
     ),
     yaxis2 = list(
       overlaying = "y",
       side = "right",
       type = "log",
-      title = list(text = "Cumulative Total Records (log)"),
+      title = list(text = "Total Acumulativo (log)"),
       rangemode = "nonnegative"
     ),
     margin = list(r = 80),
@@ -210,22 +200,22 @@ fig <- plot_ly() %>%
   )
 
 fig
-```
+#| title: Número de Datasets Publicados por Año
+# Gráfico de barras apiladas que muestra cuántos datasets
+# de cada tipo (type) se publicaron por año.
 
-## Row
+# Paleta de colores de Viridis
+if(nrow(created_datasets_counts) > 0) {
+  n_colors <- length(unique(created_datasets_counts$type))
+  cb_palette <- viridis(n_colors)
+} else {
+  cb_palette <- viridis(1) # Default color if no data
+}
 
-### Datasets published
-
-```{r}
-#| title: Number of Datasets Published per Year
-
-# Get the needed number of colors
-n_colors <- length(unique(created_datasets_counts$type))
-cb_palette <- viridis(n_colors) 
 
 fig <- plot_ly() %>%
-  
-  # stacked bars
+
+  # Barras apiladas (stack)
   add_bars(
     data = created_datasets_counts,
     x = ~created_year,
@@ -234,73 +224,68 @@ fig <- plot_ly() %>%
     colors = cb_palette,
     name = ~type
   ) %>%
-  
-  # cumulative line
+
+  # Línea acumulativa
   add_lines(
     data = cumulative_created_datasets,
     x = ~created_year,
     y = ~cumulative_total,
-    name = "Cumulative Total",
-    yaxis = "y2",
+    name = "Total Acumulativo",
+    yaxis = "y2", # Eje Y secundario
     line = list(color = "#F8760DFF", width = 2)
   ) %>%
-  
+
   layout(
-    barmode = "stack",
-    xaxis = list(title = "Year"),
-    yaxis = list(title = "Number of Datasets"),
+    barmode = "stack", # Apilar las barras
+    xaxis = list(title = "Año"),
+    yaxis = list(title = "Número de Datasets"),
     yaxis2 = list(
       overlaying = "y",
       side = "right",
-      title = "Cumulative Total"
+      title = "Total Acumulativo"
     ),
     margin = list(r = 80),
     legend = list(x = 0.02, y = 1)
   )
 
 fig
-```
+#| title: Citaciones de Datasets Publicados (GBIF) por Año
+# Gráfico de barras que muestra cuántos artículos científicos
+# han citado datasets de GBIF relacionados con Ecuador.
 
-### Dataset Citation per Year
-
-```{r}
-#| title: Citations of Our Published Datasets (GBIF) per Year
-
-# Use bright orange for the cumulative curve
 cumulative_color <- "#F8760D"
 
 fig <- plot_ly() %>%
-  
-  # Bar chart: Total Occurrence Records Published per Year
+
+  # Barras: Citaciones por año
   add_bars(
     data = citation_per_year,
     x = ~year,
     y = ~count,
-    name = "Citation Count per year",
+    name = "Citaciones por año",
     marker = list(color = "#21908CFF")
   ) %>%
-  
-  # Overlay cumulative curve
+
+  # Línea: Total acumulativo
   add_lines(
     data = citation_per_year,
     x = ~year,
     y = ~cumulative_count,
-    name = "Cumulative Citation Count",
+    name = "Total Acumulativo",
     yaxis = "y2",
     line = list(color = cumulative_color, width = 2)
   ) %>%
-  
-  # Layout for log scale
+
   layout(
-    xaxis = list(title = "Year"),
+    xaxis = list(title = "Año"),
     yaxis = list(
-      title = "Citation Count per year",
+      title = "Número de Citaciones",
       rangemode = "nonnegative"
     ),
     yaxis2 = list(
       overlaying = "y",
       side = "right",
-      title = list(text = "Cumulative Citation Count"),
+      title = list(text = "Total Acumulativo"),
       rangemode = "nonnegative"
     ),
     margin = list(r = 80),
@@ -308,38 +293,37 @@ fig <- plot_ly() %>%
   )
 
 fig
-```
+#| title: Distribución de Licencias de Datasets
+# Gráfico de pastel (dona) que muestra el porcentaje
+# de cada tipo de licencia (CC-BY, CC0, etc.)
 
-## Row
+if(nrow(license_counts) > 0) {
+  n_colors <- length(unique(license_counts$license))
+  cb_palette <- viridis(n_colors)
+} else {
+   cb_palette <- viridis(1) # Default color if no data
+}
 
-### License type
 
-```{r}
-#| title: Distribution of Dataset Licenses
-
-# Get the needed number of colors
-n_colors <- length(unique(license_counts$license))
-cb_palette <- viridis(n_colors) 
-
-# Create pie chart
 plot_ly(
   license_counts,
   labels = ~license,
   values = ~count,
   type = "pie",
-  hole = 0.4,
+  hole = 0.4, # Agujero en el medio para hacerlo tipo dona
   marker = list(colors = cb_palette)
 )
-```
+#| title: Número de Datasets Actualizados por Año
+# Gráfico de barras apiladas que muestra cuántos datasets
+# fueron modificados/actualizados cada año.
 
-### Datasets updated
+if(nrow(modified_datasets_counts) > 0) {
+  n_colors <- length(unique(modified_datasets_counts$type))
+  cb_palette <- viridis(n_colors)
+} else {
+   cb_palette <- viridis(1) # Default color if no data
+}
 
-```{r}
-#| title: Number of Datasets Updated per Year (Stacked by Type)
-
-# Get the needed number of colors
-n_colors <- length(unique(modified_datasets_counts$type))
-cb_palette <- viridis(n_colors) 
 
 plot_ly(
   modified_datasets_counts,
@@ -351,8 +335,7 @@ plot_ly(
 ) %>%
   layout(
     barmode = "stack",
-    xaxis = list(title = "Year"),
-    yaxis = list(title = "Number of Datasets"),
+    xaxis = list(title = "Año"),
+    yaxis = list(title = "Número de Datasets"),
     legend = list(x = 0.02, y = 1)
   )
-```
