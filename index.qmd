@@ -13,3 +13,5 @@ Se presentan dos visualizaciones principales:
 2.  **Publicados por Año GBIF:** Muestra una estimación de cuántos registros nuevos se añadieron a GBIF cada año. (Datos procesados de un archivo CSV de GBIF).
 
 Usa la barra de navegación superior para explorar los gráficos.
+
+XXX
