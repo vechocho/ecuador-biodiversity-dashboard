@@ -1,0 +1,106 @@
+---
+title: "Ocurrencias Publicadas en GBIF por Año"
+format: html
+execute:
+  echo: false
+---
+
+```{r setup-published, include=FALSE}
+# Cargar librerías necesarias
+library(tidyverse)
+library(plotly)
+library(lubridate)
+library(httr) # Necesario para read_csv con URL
+library(readr)
+
+# --- OCURRENCIAS PUBLICADAS POR AÑO (Procesando Snapshots del CSV) ---
+print("Descargando y procesando CSV de snapshots...")
+published_by_year_url <- "[https://analytics-files.gbif.org/country/EC/publishedBy/csv/occ.csv](https://analytics-files.gbif.org/country/EC/publishedBy/csv/occ.csv)"
+occ_published_by_year <- tibble() # Inicializar tabla vacía
+
+tryCatch({
+  # Lee el CSV directamente desde la URL
+  raw_snapshots <- read_csv(published_by_year_url, show_col_types = FALSE) # Ocultar mensajes de tipo de columna
+
+  # Nombres de columna confirmados
+  snapshot_date_col <- "snapshot"
+  snapshot_count_col <- "occurrenceCount"
+
+  # Verificar que las columnas existan antes de procesar
+  if (snapshot_date_col %in% colnames(raw_snapshots) && snapshot_count_col %in% colnames(raw_snapshots)) {
+
+    # Procesa los snapshots para obtener cuentas anuales
+    occ_published_snapshots <- raw_snapshots %>%
+      select(snapshot_date = all_of(snapshot_date_col), total_count = all_of(snapshot_count_col)) %>%
+      mutate(snapshot_date = ymd(snapshot_date)) %>% # Asume formato AAAA-MM-DD
+      filter(!is.na(snapshot_date)) %>% # Eliminar filas con fechas inválidas
+      arrange(snapshot_date) %>% # Ordena por fecha
+      # Asegurar que no haya duplicados de fecha, manteniendo el último conteo para cada fecha
+      group_by(snapshot_date) %>%
+      filter(row_number() == n()) %>%
+      ungroup() %>%
+      # Calcular diferencia con el registro anterior válido
+      mutate(published_since_last = total_count - lag(total_count, default = 0)) %>%
+      # Corregir posibles valores negativos si el conteo disminuye
+      mutate(published_since_last = ifelse(published_since_last < 0, 0, published_since_last)) %>%
+      mutate(publishing_year = year(snapshot_date)) %>%
+      filter(publishing_year >= 1950, publishing_year <= year(today())) # Filtrar años
+
+    # Agrupa por año para obtener el total publicado ESE año
+    occ_published_by_year <- occ_published_snapshots %>%
+      group_by(publishing_year) %>%
+      summarise(count_published = sum(published_since_last, na.rm = TRUE), .groups = 'drop') %>%
+      arrange(publishing_year) %>%
+      mutate(cumulative_published = cumsum(count_published)) # Calcula el acumulado final
+
+    print("CSV de snapshots procesado para obtener cuentas anuales.")
+    print(paste("Dim 'occ_published_by_year':", paste(dim(occ_published_by_year), collapse = " x ")))
+
+  } else {
+      print(paste("Error: Las columnas requeridas ('", snapshot_date_col, "', '", snapshot_count_col, "') no se encontraron en el CSV."))
+  }
+
+}, error = function(e) {
+  print(paste("Error descargando o procesando el CSV de snapshots:", e$message))
+  # Dejar occ_published_by_year como tabla vacía si hay error
+})
+
+# Renombrar columnas para usar en el gráfico
+records_per_year_published <- occ_published_by_year %>%
+  rename(year = publishing_year, total_records_published = count_published)
+
+#| title: Número Estimado de Registros Publicados en GBIF por Año
+# Muestra cuántos registros nuevos se añadieron a GBIF cada año (estimado).
+
+cumulative_color_published <- "#440154FF" # Morado
+
+fig_published <- plot_ly() %>%
+  add_bars(
+    data = records_per_year_published,
+    x = ~year,
+    y = ~total_records_published,
+    name = "Registros publicados por año",
+    marker = list(color = "#7AD151FF") # Verde claro
+  ) %>%
+  add_lines(
+    data = records_per_year_published,
+    x = ~year,
+    y = ~cumulative_published,
+    name = "Total Acumulado Publicado",
+    yaxis = "y2",
+    line = list(color = cumulative_color_published, width = 2)
+  ) %>%
+  layout(
+    xaxis = list(title = "Año de Publicación en GBIF"),
+    yaxis = list(title = "Registros Publicados por Año (log)", type = "log", rangemode = "nonnegative"),
+    yaxis2 = list(overlaying = "y", side = "right", type = "log", title = list(text = "Total Acumulativo Publicado (log)"), rangemode = "nonnegative"),
+    margin = list(r = 80),
+    legend = list(x = 0.05, y = 0.95)
+  )
+
+# Mostrar gráfico si hay datos
+if(nrow(records_per_year_published) > 0) {
+  fig_published
+} else {
+  print("No se pudieron cargar/procesar los datos de ocurrencias publicadas por año.")
+}

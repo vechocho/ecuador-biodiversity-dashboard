@@ -1,0 +1,24 @@
+# Archivo de configuración principal del sitio Quarto
+project:
+  type: website   # Indica que es un sitio web
+  output-dir: _site # Carpeta donde se genera el sitio (para Actions)
+
+website:
+  title: "Biodiversidad Ecuador - Tendencias" # Título general del sitio
+  navbar: # Barra de navegación superior
+    left:
+      - href: index.qmd # Enlace a la página principal
+        text: Inicio
+      - href: ocurrencias_evento.qmd # Enlace a la página del 1er gráfico
+        text: Ocurrencias (Año Evento)
+      - href: publicados_ano.qmd # Enlace a la página del 2do gráfico
+        text: Publicados (Año GBIF)
+      # Puedes añadir más enlaces aquí en el futuro
+
+# Formato general para las páginas HTML
+format:
+  html:
+    theme: cosmo # Tema visual (puedes cambiarlo, ej: flatly, journal, litera)
+    toc: true    # Añadir tabla de contenidos a la derecha
+    toc-depth: 3 # Profundidad de la tabla de contenidos
+    # css: styles.css # Opcional: para estilos personalizados

@@ -1,0 +1,59 @@
+---
+title: "Ocurrencias por Año de Colecta/Observación"
+format: html # Formato simple de página
+execute:
+  echo: false # Ocultar código R
+---
+
+```{r setup-event, include=FALSE}
+# Cargar librerías necesarias
+library(tidyverse)
+library(plotly)
+library(rgbif)
+library(lubridate)
+
+# --- OCURRENCIAS POR AÑO DE EVENTO (API GBIF) ---
+print("Buscando conteos de ocurrencias por AÑO DE EVENTO para Ecuador...")
+occurrence_counts_by_event_year <- occ_search(
+  country = "EC", facet = "year", facetLimit = 200, limit = 0
+)$facets$year$counts %>%
+  as_tibble() %>%
+  rename(year = name, count = count) %>%
+  mutate(year = as.integer(year), count = as.integer(count)) %>%
+  filter(year >= 1800, year <= year(today())) %>%
+  arrange(year) %>%
+  mutate(cumulative_occ_event = cumsum(count))
+
+print("Conteos por año de evento obtenidos.")
+
+# Renombrar para el gráfico
+records_per_year_event <- occurrence_counts_by_event_year %>%
+  rename(created_year = year, total_occurrence_records = count)
+
+#| title: Número de Registros por Año de Colecta/Observación
+# Muestra cuántos registros se colectaron/observaron en cada año.
+
+cumulative_color_event <- "#F8760D" # Naranja
+
+fig_event <- plot_ly() %>%
+  add_bars(
+    data = records_per_year_event, x = ~created_year, y = ~total_occurrence_records,
+    name = "Registros por año", marker = list(color = "#21908CFF")
+  ) %>%
+  add_lines(
+    data = records_per_year_event, x = ~created_year, y = ~cumulative_occ_event,
+    name = "Total Acumulativo", yaxis = "y2", line = list(color = cumulative_color_event, width = 2)
+  ) %>%
+  layout(
+    xaxis = list(title = "Año de Colecta/Observación"),
+    yaxis = list(title = "Registros por Año (log)", type = "log", rangemode = "nonnegative"),
+    yaxis2 = list(overlaying = "y", side = "right", type = "log", title = list(text = "Total Acumulativo (log)"), rangemode = "nonnegative"),
+    margin = list(r = 80), legend = list(x = 0.05, y = 0.95)
+  )
+
+# Mostrar gráfico si hay datos
+if(nrow(records_per_year_event) > 0) {
+  fig_event
+} else {
+  print("No hay datos de ocurrencias por año de evento.")
+}
