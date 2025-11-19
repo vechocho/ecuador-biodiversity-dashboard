@@ -67,6 +67,9 @@ tryCatch({
   print(paste("Error descargando o procesando el CSV de snapshots:", e$message))
   # Dejar occ_published_by_year como tabla vacía si hay error
 })
+```
+
+```{r plot-published}
 
 # Renombrar columnas para usar en el gráfico
 records_per_year_published <- occ_published_by_year %>%
@@ -107,3 +110,5 @@ if(nrow(records_per_year_published) > 0) {
 } else {
   print("No se pudieron cargar/procesar los datos de ocurrencias publicadas por año.")
 }
+
+```
