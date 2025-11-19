@@ -67,15 +67,15 @@ tryCatch({
   print(paste("Error descargando o procesando el CSV de snapshots:", e$message))
   # Dejar occ_published_by_year como tabla vacía si hay error
 })
-```
-
-```{r plot-published}
 
 # Renombrar columnas para usar en el gráfico
 records_per_year_published <- occ_published_by_year %>%
   rename(year = publishing_year, total_records_published = count_published)
+```
 
+```{r plot-published}
 #| title: Número Estimado de Registros Publicados en GBIF por Año
+
 # Muestra cuántos registros nuevos se añadieron a GBIF cada año (estimado).
 
 cumulative_color_published <- "#440154FF" # Morado
