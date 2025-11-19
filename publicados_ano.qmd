@@ -6,7 +6,7 @@ execute:
   echo: false
 ---
   
-  ```{r setup-published, include=FALSE}
+```{r setup-published, include=FALSE}
 # Cargar librerías necesarias
 library(tidyverse)
 library(plotly)
